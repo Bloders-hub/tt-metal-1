@@ -860,11 +860,11 @@ HWCommandQueue& Device::command_queue(std::optional<uint8_t> cq_id) {
 }
 
 SystemMemoryManager& Device::sysmem_manager() {
-    // SystemMemoryManager handles mock devices internally with stubs
-    // For mock devices, ensure lazy initialization if not already done
+    // Mock and emulated devices skip init_command_queue_host, so their SystemMemoryManager is created here on first
+    // use. It needs one CQ per hardware CQ: the mesh command queues use all of them.
     if (!sysmem_manager_) {
-        sysmem_manager_ =
-            std::make_unique<SystemMemoryManager>(MetalEnvAccessor(*env_).impl(), *context_, this->id_, 1);
+        sysmem_manager_ = std::make_unique<SystemMemoryManager>(
+            MetalEnvAccessor(*env_).impl(), *context_, this->id_, this->num_hw_cqs());
     }
     return *sysmem_manager_;
 }
