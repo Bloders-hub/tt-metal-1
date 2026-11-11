@@ -56,9 +56,9 @@ class Identity:
 class Pad:
     """Device rows ``[0, logical)`` along ``dim`` are canonical; rows ``[logical, padded)`` are padding.
 
-    Padding rows are trained (the vocab-parallel loss normalises over them), so they are written to the checkpoint
-    and copied 1:1 when the destination has the same padded extent. When it does not, destination padding rows are
-    filled per ``fill``.
+    Padding rows are written to the checkpoint, so a same-layout load (identical transform and global shape) restores
+    them bit for bit. On any other load the destination's padding rows are filled per ``fill``, even when its padded
+    extent equals the saved one: the planner copies device rows directly only when the whole layout is unchanged.
     """
 
     kind: ClassVar[str] = "pad"
@@ -284,16 +284,34 @@ def padded_extent(dim: int, logical: int, padded: int, fill: str = "zeros") -> T
 
 def declared_transform(
     global_shape: Sequence[int],
-    shard_count_of_dim,
+    label,
     fused: tuple[int, Sequence[int]] | None = None,
     logical_extent: tuple[int, int] | None = None,
+    key: str = "",
 ) -> Transform:
     """The transform for a tensor from its declarations and its sharding.
 
     ``fused`` is ``(dim, segment sizes)`` from a fusing layer; ``logical_extent`` is ``(dim, logical rows)`` from a
-    padded vocab weight; ``shard_count_of_dim(dim)`` gives how many shards the live label splits that dim into. The
-    declarations are checked against ``global_shape``: a mismatch is a ``LayoutError``, never a silent identity.
+    padded vocab weight; ``label`` is the live tensor's topology label (``_topology.Label``), whose shards of the fused
+    dim give the interleave. The declarations are checked against ``global_shape`` and the label: a mismatch is a
+    ``LayoutError`` naming ``key``, never a silent identity.
+
+    Two combinations are refused rather than given a transform:
+
+    - A fused dim sharded by more than one mesh axis. The interleave comes from the tensor-parallel shards alone; a
+      second axis (FSDP) splitting the same rows would make the label's shard count describe a layout the weight does
+      not have, and a load onto another TP size would scramble the segments. ``fully_shard`` picks another dim by
+      default; only an explicit ``shard_dim`` on the fused rows gets here.
+    - Fusion and padding on the same dim. Under TP every shard would hold its own padding inside its segments, which
+      neither ``Pad`` (a tail of padding rows) nor ``Segments`` describes. No layer builds such a weight today;
+      supporting one needs a transform for per-shard padding, and this refusal is the place to change.
     """
+    where = f"{key}: " if key else ""
+    if fused is not None and logical_extent is not None and int(fused[0]) == int(logical_extent[0]):
+        raise LayoutError(
+            f"{where}fused_segments and logical_extent both declared on dim {int(fused[0])}; a fused weight padded "
+            f"along its fused dim has no supported layout (each TP shard would carry its own padding)"
+        )
     steps: list[Transform] = []
     if logical_extent is not None:
         dim, logical = logical_extent
@@ -302,7 +320,15 @@ def declared_transform(
         dim, sizes = fused
         if sum(sizes) != global_shape[dim]:
             raise LayoutError(
-                f"fused_segments {tuple(sizes)} sum to {sum(sizes)} but the weight has {global_shape[dim]} rows on dim {dim}"
+                f"{where}fused_segments {tuple(sizes)} sum to {sum(sizes)} but the weight has {global_shape[dim]} rows "
+                f"on dim {dim}"
             )
-        steps.append(fused_segments(dim, sizes, shard_count_of_dim(dim)))
+        axes = label.shard_axes(dim)
+        if len(axes) > 1:
+            raise LayoutError(
+                f"{where}fused_segments on dim {dim}, which {len(axes)} mesh axes shard (distribution axes "
+                f"{list(axes)}); the fused row order is defined only when the tensor-parallel axis alone shards it. "
+                f"Shard this weight with FSDP along another dim (fully_shard's default picks one)"
+            )
+        steps.append(fused_segments(dim, sizes, label.shard_count(dim)))
     return compose(*steps)
