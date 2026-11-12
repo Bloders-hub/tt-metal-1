@@ -38,7 +38,7 @@ def relu_config(
     config: "GlobalConfig", operation: "L1Operation", node: "PackNode"
 ) -> str:
     dest_acc = config.dest_acc.cpp_enum_value
-    pack_src_format = config.sentinel._pack_src
+    pack_src_format = node.pack_src_format
 
     relu_config_val = PackGolden.generate_relu_config(
         node.pack_relu, node.relu_threshold, pack_src_format
