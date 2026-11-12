@@ -17,10 +17,12 @@
 #include <tt-metalium/experimental/metal2_host_api/arg_value.hpp>
 #include <tt-metalium/experimental/metal2_host_api/kernel_spec.hpp>
 #include <tt-metalium/experimental/metal2_host_api/dataflow_buffer_spec.hpp>
+#include <tt-metalium/experimental/metal2_host_api/global_semaphore_parameter.hpp>
 #include <tt-metalium/experimental/metal2_host_api/tensor_parameter.hpp>
 #include <tt-metalium/experimental/metal2_host_api/node_coord.hpp>
 #include <tt-metalium/experimental/metal2_host_api/utility/group.hpp>
 #include <tt-metalium/experimental/metal2_host_api/utility/table.hpp>
+#include <tt-metalium/global_semaphore.hpp>
 #include <tt-metalium/tensor/mesh_tensor.hpp>
 
 namespace tt::tt_metal::experimental {
@@ -141,6 +143,23 @@ struct ProgramRunArgs {
     Table<TensorParamName, TensorArgument> tensor_args;
 
     ////////////////////////////////////////////////////////////////////////
+    // GlobalSemaphore arguments
+    ////////////////////////////////////////////////////////////////////////
+
+    // The actual GlobalSemaphore argument (non-owning reference)
+    using GlobalSemaphoreArgument = std::reference_wrapper<const GlobalSemaphore>;
+
+    // A GlobalSemaphoreArgument must be specified:
+    //  For EVERY GlobalSemaphoreParameter in the ProgramSpec, when calling SetProgramRunArgs.
+    //  For any SUBSET of GlobalSemaphoreParameters, when calling UpdateProgramRunArgs.
+    //
+    // The supplied GlobalSemaphore MUST live on the MeshDevice the Program was built for.
+    //
+    // CAUTION: The user is responsible for keeping the GlobalSemaphore alive until the last Program
+    //          execution that uses it has completed on the device.
+    Table<GlobalSemaphoreParamName, GlobalSemaphoreArgument> global_semaphore_args;
+
+    ////////////////////////////////////////////////////////////////////////
     // DFB parameters (optional, advanced use cases)
     ////////////////////////////////////////////////////////////////////////
     struct DFBRunOverrides {
@@ -183,6 +202,7 @@ struct ProgramRunArgs {
 using KernelRunArgs = ProgramRunArgs::KernelRunArgs;
 using DFBRunOverrides = ProgramRunArgs::DFBRunOverrides;
 using TensorArgument = ProgramRunArgs::TensorArgument;
+using GlobalSemaphoreArgument = ProgramRunArgs::GlobalSemaphoreArgument;
 
 //-----------------------------------------------------
 // Helper functions
