@@ -541,6 +541,36 @@ TEST_F(CommandListTest, UpdatesRuntimeAndCommonRuntimeArgumentsTransactionally) 
     EXPECT_EQ(read_l1(mesh_device_, kAddressB), kValueB);
 }
 
+TEST_F(CommandListTest, AcceptsParametersWhoseExpectedValuesMatchTheRecording) {
+    auto workload = make_l1_write_workload(*mesh_device_, kAddressA, kValueA, "expected_values");
+    auto& program = workload.get_programs().begin()->second;
+    auto& cq = mesh_device_->mesh_command_queue(0);
+    const CmdListRuntimeArgName address_param{"destination"};
+    const CmdListCommonRuntimeArgName value_param{"payload"};
+
+    auto address = l1_write_address_arg(program);
+    address.expected_value = kAddressA;
+    auto value = l1_write_value_arg(program);
+    value.expected_value = kValueA;
+    CommandListBuilder builder(*mesh_device_);
+    builder.add(
+        cq,
+        workload,
+        CmdListParameters{
+            .runtime_parameters = {{address_param, std::vector<CmdListRuntimeArgInfo>{address}}},
+            .common_runtime_parameters = {{value_param, std::vector<CmdListCommonRuntimeArgInfo>{value}}},
+        });
+    auto command_list = builder.build(cq);
+
+    command_list.update_args(CmdListArgPatch{
+        .runtime_args = {{address_param, kAddressB}},
+        .common_runtime_args = {{value_param, kValueB}},
+    });
+    write_l1(mesh_device_, kAddressB, 0);
+    EnqueueCommandList(cq, command_list, /*blocking=*/true);
+    EXPECT_EQ(read_l1(mesh_device_, kAddressB), kValueB);
+}
+
 TEST_F(CommandListTest, UpdatesTensorArgumentForSubsequentReplays) {
     // Create two compatible inputs and one output for a tensor-accessor loopback.
     constexpr uint32_t num_pages = 2;
@@ -1392,6 +1422,18 @@ TEST_F(CommandListTest, RejectsUnresolvableParametersWithoutChangingTheRecording
     expect_add_throws(
         {.runtime_parameters = {{address_param, std::vector<CmdListRuntimeArgInfo>{no_nodes}}}},
         "must name at least one node");
+
+    // An expected value must match what the program recorded for the argument.
+    auto wrong_address = l1_write_address_arg(program);
+    wrong_address.expected_value = kAddressB;
+    expect_add_throws(
+        {.runtime_parameters = {{address_param, std::vector<CmdListRuntimeArgInfo>{wrong_address}}}},
+        fmt::format("holds {:#x}, expected {:#x}", kAddressA, kAddressB));
+    auto wrong_value = l1_write_value_arg(program);
+    wrong_value.expected_value = kValueB;
+    expect_add_throws(
+        {.common_runtime_parameters = {{value_param, std::vector<CmdListCommonRuntimeArgInfo>{wrong_value}}}},
+        fmt::format("holds {:#x}, expected {:#x}", kValueA, kValueB));
 
     // A tensor parameter must name a TensorParameter the program declares.
     expect_add_throws(

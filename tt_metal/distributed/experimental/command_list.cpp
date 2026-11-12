@@ -957,8 +957,19 @@ void CommandListBuilderImpl::resolve_parameters(
                 info.kernel_name);
             auto kernel = captured.trace_node.program->get_kernel_by_spec_name(*info.kernel_name);
             for (const auto& node : info.nodes) {
-                for (const auto& location : resolve_arg_locations(
-                         kernel->runtime_args_data(node), slot->second, 1, command_sequence_of(captured))) {
+                const auto& args = kernel->runtime_args_data(node);
+                const auto locations = resolve_arg_locations(args, slot->second, 1, command_sequence_of(captured));
+                TT_FATAL(
+                    !info.expected_value || args[slot->second] == *info.expected_value,
+                    "Command list runtime parameter '{}': runtime argument '{}' of kernel '{}' on node {} holds {:#x}, "
+                    "expected {:#x}",
+                    *name,
+                    info.arg_name,
+                    info.kernel_name,
+                    node,
+                    args[slot->second],
+                    *info.expected_value);
+                for (const auto& location : locations) {
                     captured.runtime_patches.push_back({.name = name, .location = location});
                 }
             }
@@ -982,8 +993,18 @@ void CommandListBuilderImpl::resolve_parameters(
                 info.arg_name,
                 info.kernel_name);
             auto kernel = captured.trace_node.program->get_kernel_by_spec_name(*info.kernel_name);
-            for (const auto& location : resolve_arg_locations(
-                     kernel->common_runtime_args_data(), slot->second, 1, command_sequence_of(captured))) {
+            const auto& args = kernel->common_runtime_args_data();
+            const auto locations = resolve_arg_locations(args, slot->second, 1, command_sequence_of(captured));
+            TT_FATAL(
+                !info.expected_value || args[slot->second] == *info.expected_value,
+                "Command list common runtime parameter '{}': common runtime argument '{}' of kernel '{}' holds {:#x}, "
+                "expected {:#x}",
+                *name,
+                info.arg_name,
+                info.kernel_name,
+                args[slot->second],
+                *info.expected_value);
+            for (const auto& location : locations) {
                 captured.common_runtime_patches.push_back({.name = name, .location = location});
             }
         }

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -62,6 +63,8 @@ struct CmdListRuntimeArgInfo {
     std::string arg_name;
     // Nodes whose copy of the argument is patched. Must not be empty.
     std::vector<NodeCoord> nodes;
+    // If set, add() fails unless every listed node's recorded value of the argument equals it.
+    std::optional<uint32_t> expected_value;
 };
 
 /**
@@ -72,6 +75,8 @@ struct CmdListCommonRuntimeArgInfo {
     std::reference_wrapper<const Program> program;
     KernelSpecName kernel_name;
     std::string arg_name;
+    // If set, add() fails unless the recorded value of the argument equals it.
+    std::optional<uint32_t> expected_value;
 };
 
 /**
