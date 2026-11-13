@@ -5,6 +5,7 @@
 #include <type_traits>
 
 #include "api/dataflow/dataflow_api.h"
+#include "api/debug/kernel_profiler.hpp"  // PROFILE (local only)
 #include "api/dataflow/noc.h"
 #include "api/dataflow/noc_semaphore.h"
 #include "api/dataflow/circular_buffer.h"
@@ -204,6 +205,7 @@ void kernel_main() {
                 !is_last_active_ring_iter(active_ring_iter_mask, ring_iter)) {
                 continue;
             }
+            DeviceZoneScopedN("W-OUT");  // PROFILE (local only): the pass's output / export writes (incl. waits)
             [[maybe_unused]] uint32_t n_exported = 0;
             for (uint32_t q_flat = pass_q_start; q_flat < pass_q_end; ++q_flat) {
                 const auto decoded_q = decompose_global_q_index(q_flat, num_q_chunks, NH, use_zigzag_balancing);
