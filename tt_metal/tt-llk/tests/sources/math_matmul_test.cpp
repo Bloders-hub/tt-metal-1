@@ -124,6 +124,22 @@ void run_kernel(RUNTIME_PARAMETERS params)
 #include "llk_math_common.h"
 #include "llk_math_matmul.h"
 
+// Row MOP: the block's KT_DIM K steps in one call. Per-tile MOP: one call per K step, as kernels call it.
+inline void run_matmul_block(const int dst_index, const std::uint32_t ct_dim, const std::uint32_t rt_dim, const std::uint32_t kt_dim)
+{
+    if constexpr (MATMUL_ROW_MOP)
+    {
+        _llk_math_matmul_<MATH_FIDELITY, THROTTLE_LEVEL, MATMUL_ROW_MOP>(dst_index, ct_dim, rt_dim, kt_dim);
+    }
+    else
+    {
+        for (std::uint32_t j = 0; j < kt_dim; j++)
+        {
+            _llk_math_matmul_<MATH_FIDELITY, THROTTLE_LEVEL, MATMUL_ROW_MOP>(dst_index, ct_dim, rt_dim);
+        }
+    }
+}
+
 void run_kernel(RUNTIME_PARAMETERS params)
 {
 #if defined(RUNTIME_FORMATS) && !defined(SPEED_OF_LIGHT)
@@ -172,8 +188,7 @@ void run_kernel(RUNTIME_PARAMETERS params)
             {
                 for (int block = 0; block < NUM_BLOCKS; ++block)
                 {
-                    // The block's KT_DIM inner-dimension steps in one call (k_steps)
-                    _llk_math_matmul_<MATH_FIDELITY, THROTTLE_LEVEL, MATMUL_ROW_MOP>(DST_INDEX, CT_DIM, RT_DIM, KT_DIM);
+                    run_matmul_block(DST_INDEX, CT_DIM, RT_DIM, KT_DIM);
                 }
             }
         }
@@ -187,8 +202,7 @@ void run_kernel(RUNTIME_PARAMETERS params)
                     LLK_ASSERT(
                         (NUM_TILES_IN_BLOCK <= get_dest_max_tiles<dest_sync, is_fp32_dest_acc_en, DstTileShape::Tile32x32>()),
                         "Matmul block exceeds destination capacity");
-                    // The block's KT_DIM inner-dimension steps in one call (k_steps)
-                    _llk_math_matmul_<MATH_FIDELITY, THROTTLE_LEVEL, MATMUL_ROW_MOP>(DST_INDEX, CT_DIM, RT_DIM, KT_DIM);
+                    run_matmul_block(DST_INDEX, CT_DIM, RT_DIM, KT_DIM);
                     _llk_math_dest_section_done_<dest_sync, is_fp32_dest_acc_en>();
                 }
             }
